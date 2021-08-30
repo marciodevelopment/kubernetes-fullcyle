@@ -1,0 +1,280 @@
+è um produto open source utilizado para automatizar a implantação, 
+o dimensionamento e o gerenciamento de aplicativos em conteiner
+
+Veio do google
+Borg
+Omega
+Kubernetes
+
+
+È disponibilizado através de um conjunto de apis.
+Normalment acessamos a api usando o CLI: kubectl
+Tudo é baseado em estado. Você configura o estado de cada objeto
+
+Kuberntes Master
+    kube-apiserver
+    kube-controller-manager
+    kube-scheduler
+
+ Outros nodes:
+    kubelet
+    kubeproxy
+
+
+Somam todas as memorias e cpu disponiveis nos nodes.
+
+Dentro de um nó tem:
+Pods:   Representa os processos dentro de um node. Um container rodando
+        Geralmente são um container dentro de um pod     
+
+Deployment: Quantas replicas 
+            B = Backend  => 3 replicas
+            F = Frontend => 2 replicas
+
+            Precisou mais replicas
+            B = Backend  => 3 replicas
+            F = Frontend => 2 replicas
+            
+            Precisou mais replicas
+            E não tem mais memoria. Espera liberação de recursos.
+            Ou coloca o pod em outro nó
+            
+            Se cair o computador ?
+            Ele inicia os pods em outro nó
+
+Verifica a saúde dos pods e dos nós
+
+
+======> Instalando o kind <=======
+Kind: Instala o kubernets rodando o docker
+Cada container é um node
+Configure os nodes do kubernets
+https://kind.sigs.k8s.io/
+
+Precisamos ter um kubectl -> client do kubernets.
+Quando instala kind não precisa do kubectl, mas não conseguirá se comunidar com o kubernets
+https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
+
+ sudo chmod +x ./kind && sudo mv ./kind /usr/local/bin/
+
+======> Primeiro Cluster <=======
+** kind create cluster -> Inicia o processo de instalação de um cluster
+
+
+Se conectar ao cluster
+Arquivo config tem a configuração de conexão para todos os kubernetes
+Para trabalhar em cada kubernets tem que mudar o contexto com o comando
+
+** kubectl cluster-info --context kind-kind
+** docker ps          -> deverá ter uma imagem rodando
+** kubectl get nodes  -> consulta os nodes do kubernetes
+** kind get clusters  -> cluster criados
+** kind delete clusters kind -> delete o cluster
+
+Criar um arquivo kind.yaml que é a configuração de como será criado o cluster
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpah4
+
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+  - role: worker
+
+control-plane -> Master
+https://kind.sigs.k8s.io/docs/user/configuration/
+
+** kind create cluster --config=kind.yaml --name=fullcycle  -> rodar o arquivo de configuração
+** kubectl cluster-info --context kind-fullcycle -> mudar o contexto
+
+Quais cluster estão disponiveis ?
+kubectl config
+** kubectl config get-clusters -> verifica quais clusters estão configurados
+
+Pode instalar a extenção no vscode
+
+
+======> Primeiros passos na prática <=======
+POD -> Máquina dentro de um nó
+Criar o primeiro pod
+kubernets ele tem api. Tudo é feito através da api
+Pode ter vários conteiners dentro um pod, mas no geral é um container por pod
+
+** Criar um arquivo pod.yaml para configurar o pod
+Label: Ajuda a criar filtros
+spec: 
+
+** kubectl apply -f k8s/pod.yaml   -> Aplicar o arquivo de configuração. -f file
+** kubectl get po
+** kubectl port-forward pod/goserver 8080:8080
+** kubectl delete pod goserver
+
+----> Criando primeira replicaset
+Garantir disponibilidade
+** replicaSet é um objeto que gerencia os pods. 
+    Pode configurar quantas replicas eu quero
+    Se cair ele cria de novo.
+    gerencia os pods
+
+
+Criar um arquivo replicaset.yaml
+** kubectl apply -f k8s/replicaset.yaml
+** kubectl get replicasets
+
+----> O problema do replicaset
+Ao modificar a versão/configuração da aplicação da image do arquivo replicaset ele não atualiza
+Só será atualizada a aplicação se cair/deletar o pod.
+Ou seja, apenas é atualizado quando o pod é morto e gerado um novo
+
+** kubectl describe pod goserver-glm65 
+
+----> Implementando Deployment
+Grandeza:
+Deployment > replicaset > pod
+Deployment irá criar um replicaset e um replicaset irá criar um pod
+Criar um arquivo Deployment.yaml
+
+** kubectl get replicasets
+** kubectl delete replicaset goserver
+** kubectl apply -f k8s/deployment.yaml
+
+Quando é criado novamente com outra versão é finalizado os pods anteriores e então inicia os novos pods.
+Isso de maneira a não deixar a aplicação indisponível.
+O replicaset ficará no historico quando executar o comando kubectl get replicasets.
+
+
+----> Rollout e revisões
+Tem erro, tem bug.
+Como será feito isso ?
+
+** Historico do que foi aplicado
+** kubectl rollout history deployment goserver   -> Consulta de historico
+** kubectl rollout undo deployment goserver      -> volta para a ultima versão que esta rodando
+** kubectl rollout undo deployment goserver --to-revision=2   -> retorna para uma revisão especifica
+** kubectl describe deployment goserver
+
+
+
+======> Services <=======
+-----> Entendendo conceitos de services
+Nossa aplicação rodando não pode ser acessada.
+Service é a porta de entrada
+
+Service x -> ele encaminha para a aplicação. Ele funciona com load balance
+
+-----> Utilizando clusterip
+Selector será responsável pelo filtro de quais pods estão associados
+type: ClusterIp
+Pode ser chamado pelo ip ou pelo nome do service.
+
+
+** kubectl apply -f k8s/service.yaml
+** kubectl get svc                    -> verificar os services
+** kubectl port-forward svc/goserver-service 8080:8080  -> configurar a porta
+
+O que é clusterIp ?
+Gerar um ip interno
+
+------> diferença entre Port e targetPort
+Coisas são diferentes entre as portas do container e do kubernetes
+targetPort: 8080
+Quando é nulo  então a porta é igual a porta do container
+Port -> Porta do service
+TargetPort -> Qual porta será utilizada para acessar o container
+
+Acessa a porta do sevice por port e ele redireciona para a porta do contair utilizando o targetPort
+
+
+-------> Utilizando proxy para acessar API do kubernetes
+** kubectl proxy --port=8080
+Ao acessar o localhost:8080 é gerado os endereços da api do kubernetes
+
+------> Utilizando NodePort
+É mais arcaico
+No service colocar:
+type: ClusterIP -> type: NodePort
+Gerar um port para todos os nodes. Geralmente não é utilizado.
+Node 1: 30000 entre 30.000 e 32767 -> 30001
+Node 2: 30001
+Node 3: 30001
+
+** kubectl get svc                    -> verificar os services
+goserver-service   NodePort    10.96.242.47   <none>        8080:30001/TCP   23h
+Todo mundo que acessar qualquer um dos nodes pela porta 30001 cai na porta 8080
+
+
+--------> Trabalhando com LoadBalancer
+type: NodePort -> type: LoadBalancer
+
+Gerar um ip externo para acessar de fora.
+Um cluster gerenciado.
+
+goserver-service   LoadBalancer   10.96.68.220   <pending>     8080:30807/TCP
+- External-ip irá gerar um ip externo para ser utilizado em um dns
+- Se tiver em uma amazon, será exibido um ip em external-ip
+- Também será liberado uma porta
+
+
+======> Objetos de configuração <=======
+Aplicação utiliza um monte de váriavel de ambiente
+Como injetar um arquivo de configuração ?
+Como guardar passwords no kubernetes para ser utilizados como váriaveis de ambiente ?
+
+-----> Utilizando váriaveis de ambiente
+NO arquivo deployment inserir as variavies de ambiente:
+   env:
+      - name: NAME
+        VALUE: "Marcio" 
+      - name: AGE
+        value: "36"  
+
+
+-----> Utilizando váriaveis de ambiente com confimap
+- Colcocar as variaveis de ambiente dentro de um arquivo
+- Config map 
+
+Criar um arquivo configmap-env.yaml
+Se mudar o arquivo será necessário atualizar o deployment
+
+kubectl apply -f k8s/configmap-env.yaml
+kubectl apply -f k8s/deployment.yaml
+env:
+  - name: NAME
+    valueFrom:
+      configMapKeyRef:
+        name: goserver-env
+        key: NAME
+
+  - name: AGE
+    valueFrom:
+      configMapKeyRef:
+        name: goserver-env
+        key: AGE
+
+kubectl rollout restart deployment goserver
+-- kubectl rollout restart deployment goserver
+
+
+kubectl port-forward svc/goserver-service 8080:80
+
+
+kubectl delete -f k8s/deployment.yaml
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
